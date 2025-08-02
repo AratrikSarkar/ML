@@ -59,6 +59,7 @@ class RNN(nn.Module):
         super().__init__()
         self.input_size=fan_in
         self.hidden_size=fan_out
+        
         self.i2h=Linear(fan_in,fan_out,bias)         #input ----> hidden
         self.h2h=Linear(fan_out,fan_out,bias)        #hidden ---> hidden
         self.activation=TanH()
@@ -69,7 +70,7 @@ class RNN(nn.Module):
         h0: (batch_size, hidden_size)
         """
 
-        seq_len, batch_size,_=x.shape
+        seq_len, batch_size, _= x.shape
         
         if h0 is None:
             h_t=torch.zeros(batch_size, self.hidden_size,device=x.device)
