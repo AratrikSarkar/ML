@@ -70,7 +70,7 @@ class GRU(nn.Module):
 
             z_t = self.sigmoid(self.x2z(x_t) + self.h2z(h_t))
             r_t = self.sigmoid(self.x2r(x_t) + self.h2r(h_t))
-            h_candidate = self.tanh(self.x2h(x_t) + self.h2h(r_t * h_t))
+            h_candidate = self.tanh(self.x2h(x_t) + self.h2h(r_t * h_t))    # candidate hidden state
             h_t = (1 - z_t) * h_t + z_t * h_candidate
 
             outputs.append(h_t.unsqueeze(0))  # (1, batch_size, hidden_size)
