@@ -78,6 +78,7 @@ class GRU(nn.Module):
         out = torch.cat(outputs, dim=0)  # (seq_len, batch_size, hidden_size)
         return out, h_t.unsqueeze(0)
 
+
 # --- Test Code ---
 if __name__ == "__main__":
     # Test parameters
