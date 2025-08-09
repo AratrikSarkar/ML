@@ -168,7 +168,7 @@ if __name__ == "__main__":
     
     seq_len, batch_size, input_size, hidden_size = 5, 3, 10, 8
     x = torch.randn(seq_len, batch_size, input_size).to(device=device)
-    rnn = RNN(input_size, hidden_size,batch_first=True).to(device=device)
+    rnn = RNN(input_size, hidden_size).to(device=device)
     
     out, hn = rnn(x)
     print(x.shape)
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     x = torch.randn(seq_len, batch_size, input_size)
 
     # Instantiate and run GRU
-    gru = GRU(fan_in=input_size, fan_out=hidden_size,batch_first=True)
+    gru = GRU(fan_in=input_size, fan_out=hidden_size)
     output, final_hidden = gru(x)
 
     # Print results
