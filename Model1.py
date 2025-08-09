@@ -55,10 +55,11 @@ class TanH(nn.Module):
         return out
     
 class RNN(nn.Module):
-    def __init__(self,fan_in,fan_out,bias=True):
+    def __init__(self,fan_in,fan_out,bias=True,batch_first=False):
         super().__init__()
         self.input_size=fan_in
         self.hidden_size=fan_out
+        self.batch_first=batch_first
         
         self.i2h=Linear(fan_in,fan_out,bias)         #input ----> hidden
         self.h2h=Linear(fan_out,fan_out,bias)        #hidden ---> hidden
@@ -69,6 +70,9 @@ class RNN(nn.Module):
         x: (seq_len, batch_size, input_size)
         h0: (batch_size, hidden_size)
         """
+        if self.batch_first:
+            x=x.permute(1,0,2)    # (batch_size, seq_len, input_size) ----> (seq_len, batch_size, input_size)
+
 
         seq_len, batch_size, _= x.shape
         
@@ -77,22 +81,25 @@ class RNN(nn.Module):
         else:
             h_t=h0
         
-        outputs=[]
+        outputs=torch.zeros(seq_len,batch_size, self.hidden_size,device=x.device)
         for t in range(seq_len):
             x_t=x[t]            #(batch_size,input_size)
             # (batch_size,input_size)  @ (input_size,hidden_size) ----> (batch_size,hidden_size)
             # (batch_size,hidden_size)  @ (hidden_size,hidden_size) ----> (batch_size,hidden_size)
             h_t=self.activation(self.i2h(x_t)+self.h2h(h_t)) # (batch_size,hidden_size) + (batch_size,hidden_size)
-            outputs.append(torch.unsqueeze(h_t,dim=0))                  #(batch_size,input_size) ----> (1,batch_size,input_size)
+            outputs[t]=h_t
+
+        if self.batch_first:
+            outputs=outputs.permute(1,0,2) # (seq_len, batch_size, input_size) ----> (batch_size, seq_len, input_size)                
         
-        out=torch.cat(outputs,dim=0) #concatenating all the (1,batch_size,input_size) into (seq_len,batch,input_size)
-        return  out,h_t.unsqueeze(0)
+        return  outputs,h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
 class GRU(nn.Module):
-    def __init__(self, fan_in, fan_out, bias=True):
+    def __init__(self, fan_in, fan_out, bias=True,batch_first=False):
         super().__init__()
         self.input_size = fan_in
         self.hidden_size = fan_out
+        self.batch_first=batch_first
 
         # Gates: z, r, h̃
         self.x2z = Linear(fan_in, fan_out, bias)
@@ -109,9 +116,12 @@ class GRU(nn.Module):
 
     def forward(self, x, h0=None):
         """
-        x: (seq_len, batch_size, input_size)
+        x: (seq_len, batch_size, input_size) or (batch_size, seq_len, input_size)
         h0: (batch_size, hidden_size)
         """
+        if self.batch_first:
+            x=x.permute(1,0,2)                  # (batch_size, seq_len, input_size) ----> (seq_len, batch_size, input_size)
+
         seq_len, batch_size, _ = x.shape
 
         if h0 is None:
@@ -119,7 +129,7 @@ class GRU(nn.Module):
         else:
             h_t = h0
 
-        outputs = []
+        outputs = torch.zeros(seq_len,batch_size,self.hidden_size)
 
         for t in range(seq_len):
             x_t = x[t]
@@ -129,10 +139,12 @@ class GRU(nn.Module):
             h_candidate = self.tanh(self.x2h(x_t) + self.h2h(r_t * h_t))    # candidate hidden state
             h_t = (1 - z_t) * h_t + z_t * h_candidate
 
-            outputs.append(h_t.unsqueeze(0))  # (1, batch_size, hidden_size)
+            outputs[t]=h_t
 
-        out = torch.cat(outputs, dim=0)  # (seq_len, batch_size, hidden_size)
-        return out, h_t.unsqueeze(0)
+        if self.batch_first:
+            outputs=outputs.permute(1,0,2) # (seq_len, batch_size, input_size) ----> (batch_size, seq_len, input_size)
+        
+        return outputs, h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
 if __name__ == "__main__":
     q=Linear(3,4)
@@ -148,21 +160,20 @@ if __name__ == "__main__":
 
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=Sigmoid().to(device=device)
-    print("Stable:", k(x))
+    print("Stable Sigmoid:", k(x))
 
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=TanH().to(device=device)
-    print("Stable:", k(x))
-
-    """
+    print("Stable TanH:", k(x))
+    
     seq_len, batch_size, input_size, hidden_size = 5, 3, 10, 8
     x = torch.randn(seq_len, batch_size, input_size).to(device=device)
-    rnn = RNN(input_size, hidden_size).to(device=device)
+    rnn = RNN(input_size, hidden_size,batch_first=True).to(device=device)
     
     out, hn = rnn(x)
+    print(x.shape)
     print(out.shape)  # torch.Size([5, 3, 8])
-    print(hn.shape)   # torch.Size([1, 3, 8])
-    """
+    print(hn.shape)   # torch.Size([1, 3, 8])   
 
     seq_len = 5
     batch_size = 2
@@ -173,7 +184,7 @@ if __name__ == "__main__":
     x = torch.randn(seq_len, batch_size, input_size)
 
     # Instantiate and run GRU
-    gru = GRU(fan_in=input_size, fan_out=hidden_size)
+    gru = GRU(fan_in=input_size, fan_out=hidden_size,batch_first=True)
     output, final_hidden = gru(x)
 
     # Print results
