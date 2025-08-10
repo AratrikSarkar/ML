@@ -129,7 +129,7 @@ class GRU(nn.Module):
         else:
             h_t = h0
 
-        outputs = torch.zeros(seq_len,batch_size,self.hidden_size)
+        outputs = torch.zeros(seq_len,batch_size,self.hidden_size, device=x.device)
 
         for t in range(seq_len):
             x_t = x[t]
