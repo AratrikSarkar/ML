@@ -102,12 +102,15 @@ class GRU(nn.Module):
         self.batch_first=batch_first
 
         # Gates: z, r, h̃
+        # Update Gate Layers
         self.x2z = Linear(fan_in, fan_out, bias)
         self.h2z = Linear(fan_out, fan_out, bias)
 
+        # Reset Gate Layers
         self.x2r = Linear(fan_in, fan_out, bias)
         self.h2r = Linear(fan_out, fan_out, bias)
 
+        # Candidate Hidden State Layers
         self.x2h = Linear(fan_in, fan_out, bias)
         self.h2h = Linear(fan_out, fan_out, bias)
 
@@ -123,6 +126,10 @@ class GRU(nn.Module):
             x=x.permute(1,0,2)                  # (batch_size, seq_len, input_size) ----> (seq_len, batch_size, input_size)
 
         seq_len, batch_size, _ = x.shape
+
+        # z_t : Update Gate
+        # r_t : Reset Gate
+        # h_t : Hidden Gate
 
         if h0 is None:
             h_t = torch.zeros(batch_size, self.hidden_size, device=x.device)

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Linear(nn.Module):
     def __init__(self, fan_in, fan_out, bias=True):
