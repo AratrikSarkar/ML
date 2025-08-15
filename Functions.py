@@ -37,6 +37,36 @@ class Dropout(nn.Module):
 
         return out
 
+class Flatten(nn.Module):
+    def __init__(self, start_dim=1, end_dim=-1):
+        super().__init__()
+        self.start_dim = start_dim
+        self.end_dim = end_dim
+
+    def forward(self, x):
+        nd = x.dim()  # number of dimensions
+
+        # Normalize possibly-negative dims
+        start = self.start_dim if self.start_dim >= 0 else nd + self.start_dim
+        end   = self.end_dim   if self.end_dim   >= 0 else nd + self.end_dim
+
+        if not (0 <= start < nd) or not (0 <= end < nd):
+            raise ValueError(f"start_dim/end_dim out of range for input with dim {nd}")
+        if start > end:
+            raise ValueError("start_dim must be <= end_dim")
+
+        # Reshaping
+        shape = list(x.shape)
+
+        # If end is the last dim, don't append anything after -1
+        if end == nd - 1:
+            new_shape = shape[:start] + [-1]
+        else:
+            new_shape = shape[:start] + [-1] + shape[end + 1:]
+
+        out = x.reshape(new_shape)
+        return out
+
 if __name__ == "__main__":
     torch.manual_seed(0)  # for reproducibility
 
@@ -58,3 +88,16 @@ if __name__ == "__main__":
 
     dropout.eval()  # disable dropout
     print("\nDropout output (eval mode - should be unchanged):\n", dropout(y))
+
+    # ==== Test Flatten ====
+    flatten = Flatten()
+    z = torch.randn(2, 3, 4, 5)  # shape: (2, 3, 4, 5)
+    print("\nFlatten test:")
+    print("Before flatten:", z.shape)
+    z_flat = flatten(z)
+    print("After flatten:", z_flat.shape)
+
+    # Custom flatten range
+    flatten_partial = Flatten(start_dim=2, end_dim=3)
+    z_partial = flatten_partial(z)
+    print("Partial flatten (dims 2-3):", z_partial.shape)
