@@ -375,6 +375,7 @@ if __name__ == "__main__":
     print("Sum along dim=1 (should be 1):\n", softmax(x).sum(dim=1))
 
     # ==== Test Dropout ====
+    print("Dropout Test:")
     dropout = Dropout(p=0.3)
     dropout.train()  # enable dropout mode
 
@@ -386,6 +387,7 @@ if __name__ == "__main__":
     print("\nDropout output (eval mode - should be unchanged):\n", dropout(y))
 
     # ==== Test Flatten ====
+    print("Flatten Test:")
     flatten = Flatten()
     z = torch.randn(2, 3, 4, 5)  # shape: (2, 3, 4, 5)
     print("\nFlatten test:")
