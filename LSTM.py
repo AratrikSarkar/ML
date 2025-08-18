@@ -34,23 +34,23 @@ class TanH(nn.Module):
         return out
 
 class LSTM(nn.Module):
-    def __init__(self, fan_in, fan_out, bias=True, batch_first=False):
+    def __init__(self, input_size, hidden_size, bias=True, batch_first=False):
         super().__init__()
-        self.input_size = fan_in
-        self.hidden_size = fan_out
+        self.input_size = input_size
+        self.hidden_size = hidden_size
         self.batch_first = batch_first
 
         # Input → Gates
-        self.x2i = Linear(fan_in, fan_out, bias)  # input gate
-        self.x2f = Linear(fan_in, fan_out, bias)  # forget gate
-        self.x2o = Linear(fan_in, fan_out, bias)  # output gate
-        self.x2g = Linear(fan_in, fan_out, bias)  # candidate cell state
+        self.x2i = Linear(input_size, hidden_size, bias)  # input gate
+        self.x2f = Linear(input_size, hidden_size, bias)  # forget gate
+        self.x2o = Linear(input_size, hidden_size, bias)  # output gate
+        self.x2g = Linear(input_size, hidden_size, bias)  # candidate cell state
 
         # Hidden → Gates
-        self.h2i = Linear(fan_out, fan_out, bias)
-        self.h2f = Linear(fan_out, fan_out, bias)
-        self.h2o = Linear(fan_out, fan_out, bias)
-        self.h2g = Linear(fan_out, fan_out, bias)
+        self.h2i = Linear(hidden_size, hidden_size, bias)
+        self.h2f = Linear(hidden_size, hidden_size, bias)
+        self.h2o = Linear(hidden_size, hidden_size, bias)
+        self.h2g = Linear(hidden_size, hidden_size, bias)
 
         # Activations
         self.sigmoid = Sigmoid()

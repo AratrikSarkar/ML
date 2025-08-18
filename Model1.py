@@ -7,13 +7,13 @@ class Linear(nn.Module):
         super().__init__()
         self.W=nn.Parameter(torch.randn((fan_out,fan_in)))
         self.b=nn.Parameter(torch.randn(fan_out)) if bias==True else None
-    
+
     def forward(self, x):
         out= x @ self.W.T
         if self.b is not None:
             out=out+self.b
         return  out
-    
+
 class ReLu(nn.Module):
     def __init__(self,inplace=False):
         super().__init__()
@@ -24,11 +24,11 @@ class ReLu(nn.Module):
             return torch.clamp_(x,min=0.0)      # modifies x
         else:
             return torch.clamp(x,min=0.0)       # x remains unchanged
-        
+
 class Sigmoid(nn.Module):
     def __init__(self):
         super().__init__()
-        
+
     def forward(self, x):
         out=torch.empty_like(x)
         positive=x>=0
@@ -45,7 +45,7 @@ class Sigmoid(nn.Module):
 class TanH(nn.Module):
     def __init__(self):
         super().__init__()
-    
+
     def forward(self,x):
         out=torch.empty_like(x)
         positive=x>=0
@@ -53,18 +53,18 @@ class TanH(nn.Module):
         out[positive]=1-(2/(torch.exp(2*x[positive])+1))
         out[negative]=(2/(torch.exp(-2*x[negative])+1))-1
         return out
-    
+
 class RNN(nn.Module):
-    def __init__(self,fan_in,fan_out,bias=True,batch_first=False):
+    def __init__(self,input_size,hidden_size,bias=True,batch_first=False):
         super().__init__()
-        self.input_size=fan_in
-        self.hidden_size=fan_out
+        self.input_size=input_size
+        self.hidden_size=hidden_size
         self.batch_first=batch_first
-        
-        self.i2h=Linear(fan_in,fan_out,bias)         #input ----> hidden
-        self.h2h=Linear(fan_out,fan_out,bias)        #hidden ---> hidden
+
+        self.i2h=Linear(input_size,hidden_size,bias)         #input ----> hidden
+        self.h2h=Linear(hidden_size,hidden_size,bias)        #hidden ---> hidden
         self.activation=TanH()
-    
+
     def forward(self, x, h0=None):
         """
         x: (seq_len, batch_size, input_size)
@@ -75,12 +75,12 @@ class RNN(nn.Module):
 
 
         seq_len, batch_size, _= x.shape
-        
+
         if h0 is None:
             h_t=torch.zeros(batch_size, self.hidden_size,device=x.device)
         else:
             h_t=h0
-        
+
         outputs=torch.zeros(seq_len,batch_size, self.hidden_size,device=x.device)
         for t in range(seq_len):
             x_t=x[t]            #(batch_size,input_size)
@@ -90,29 +90,29 @@ class RNN(nn.Module):
             outputs[t]=h_t
 
         if self.batch_first:
-            outputs=outputs.permute(1,0,2) # (seq_len, batch_size, input_size) ----> (batch_size, seq_len, input_size)                
-        
+            outputs=outputs.permute(1,0,2) # (seq_len, batch_size, input_size) ----> (batch_size, seq_len, input_size)
+
         return  outputs,h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
 class GRU(nn.Module):
-    def __init__(self, fan_in, fan_out, bias=True,batch_first=False):
+    def __init__(self, input_size, hidden_size, bias=True,batch_first=False):
         super().__init__()
-        self.input_size = fan_in
-        self.hidden_size = fan_out
+        self.input_size = input_size
+        self.hidden_size = hidden_size
         self.batch_first=batch_first
 
         # Gates: z, r, h̃
         # Update Gate Layers
-        self.x2z = Linear(fan_in, fan_out, bias)
-        self.h2z = Linear(fan_out, fan_out, bias)
+        self.x2z = Linear(input_size, hidden_size, bias)
+        self.h2z = Linear(hidden_size, hidden_size, bias)
 
         # Reset Gate Layers
-        self.x2r = Linear(fan_in, fan_out, bias)
-        self.h2r = Linear(fan_out, fan_out, bias)
+        self.x2r = Linear(input_size, hidden_size, bias)
+        self.h2r = Linear(hidden_size, hidden_size, bias)
 
         # Candidate Hidden State Layers
-        self.x2h = Linear(fan_in, fan_out, bias)
-        self.h2h = Linear(fan_out, fan_out, bias)
+        self.x2h = Linear(input_size, hidden_size, bias)
+        self.h2h = Linear(hidden_size, hidden_size, bias)
 
         self.sigmoid = Sigmoid()
         self.tanh = TanH()
@@ -150,38 +150,112 @@ class GRU(nn.Module):
 
         if self.batch_first:
             outputs=outputs.permute(1,0,2) # (seq_len, batch_size, input_size) ----> (batch_size, seq_len, input_size)
-        
+
         return outputs, h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
+class LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, bias=True, batch_first=False):
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.batch_first = batch_first
+
+        # Input → Gates
+        self.x2i = Linear(input_size, hidden_size, bias)  # input gate
+        self.x2f = Linear(input_size, hidden_size, bias)  # forget gate
+        self.x2o = Linear(input_size, hidden_size, bias)  # output gate
+        self.x2g = Linear(input_size, hidden_size, bias)  # candidate cell state
+
+        # Hidden → Gates
+        self.h2i = Linear(hidden_size, hidden_size, bias)
+        self.h2f = Linear(hidden_size, hidden_size, bias)
+        self.h2o = Linear(hidden_size, hidden_size, bias)
+        self.h2g = Linear(hidden_size, hidden_size, bias)
+
+        # Activations
+        self.sigmoid = Sigmoid()
+        self.tanh = TanH()
+
+    def forward(self, x, state=None):
+        """
+        x: (seq_len, batch_size, input_size) or (batch_size, seq_len, input_size)
+        state: tuple (h0, c0)
+               h0: (batch_size, hidden_size)
+               c0: (batch_size, hidden_size)
+        """
+        if self.batch_first:
+            x = x.permute(1, 0, 2)  # to (seq_len, batch_size, input_size)
+
+        seq_len, batch_size, _ = x.shape
+
+        # h_t : Hidden State (Short Term Memory)
+        # c_t : Cell State (Long Term Memory)
+
+        if state is None:
+            h_t = torch.zeros(batch_size, self.hidden_size, device=x.device)
+            c_t = torch.zeros(batch_size, self.hidden_size, device=x.device)
+        else:
+            h_t, c_t = state
+
+        outputs = torch.zeros(seq_len, batch_size, self.hidden_size, device=x.device)
+
+        for t in range(seq_len):
+            x_t = x[t]
+
+            # Gates
+            i_t = self.sigmoid(self.x2i(x_t) + self.h2i(h_t))   # input gate
+            f_t = self.sigmoid(self.x2f(x_t) + self.h2f(h_t))   # forget gate
+            o_t = self.sigmoid(self.x2o(x_t) + self.h2o(h_t))   # output gate
+            g_t = self.tanh(self.x2g(x_t) + self.h2g(h_t))      # candidate cell state
+
+            # Cell state update
+            c_t = f_t * c_t + i_t * g_t
+
+            # Hidden state update
+            h_t = o_t * self.tanh(c_t)
+
+            outputs[t] = h_t
+
+        if self.batch_first:
+            outputs = outputs.permute(1, 0, 2)
+
+        return outputs, (h_t.unsqueeze(0), c_t.unsqueeze(0))
+
 if __name__ == "__main__":
+    print("Linear Test:")
     q=Linear(3,4)
     m=q.to(device)
     x=torch.randn((4,3)).to(device)
     print(x.shape)
     print(m(x))
 
+    print("ReLU Test:")
     a=torch.randn((1,4)).to(device)
     print(a,torch.relu(a))
     k=ReLu().to(device)
     print(k(a),a)
 
+    print("Sigmoid Test:")
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=Sigmoid().to(device=device)
     print("Stable Sigmoid:", k(x))
 
+    print("TanH Test:")
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=TanH().to(device=device)
     print("Stable TanH:", k(x))
-    
+
+    print("RNN Test:")
     seq_len, batch_size, input_size, hidden_size = 5, 3, 10, 8
     x = torch.randn(seq_len, batch_size, input_size).to(device=device)
     rnn = RNN(input_size, hidden_size).to(device=device)
-    
+
     out, hn = rnn(x)
     print(x.shape)
     print(out.shape)  # torch.Size([5, 3, 8])
-    print(hn.shape)   # torch.Size([1, 3, 8])   
+    print(hn.shape)   # torch.Size([1, 3, 8])
 
+    print("GRU Test:")
     seq_len = 5
     batch_size = 2
     input_size = 3
@@ -191,7 +265,7 @@ if __name__ == "__main__":
     x = torch.randn(seq_len, batch_size, input_size)
 
     # Instantiate and run GRU
-    gru = GRU(fan_in=input_size, fan_out=hidden_size)
+    gru = GRU(input_size=input_size, hidden_size=hidden_size)
     output, final_hidden = gru(x)
 
     # Print results
@@ -201,3 +275,18 @@ if __name__ == "__main__":
 
     print("\nSample output at t=0:\n", output[0])
     print("\nFinal hidden state:\n", final_hidden[0])
+
+    # Test LSTM
+    print("LSTM Test:")
+    input_size = 5
+    hidden_size = 3
+    seq_len = 4
+    batch_size = 2
+
+    lstm = LSTM(input_size, hidden_size, batch_first=True)
+    x = torch.randn(batch_size, seq_len, input_size)
+
+    outputs, (h_n, c_n) = lstm(x)
+    print("Outputs:", outputs.shape)  # (batch, seq_len, hidden_size)
+    print("h_n:", h_n.shape)  # (1, batch, hidden_size)
+    print("c_n:", c_n.shape)  # (1, batch, hidden_size)
