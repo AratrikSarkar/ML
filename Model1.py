@@ -42,6 +42,18 @@ class Sigmoid(nn.Module):
         out[negative]=exp_x/(1+exp_x)
         return out
 
+class Softmax(nn.Module):
+    def __init__(self, dim=-1):
+        super().__init__()
+        self.dim = dim  # dimension over which to apply softmax
+
+    def forward(self, x):
+        # Numerical stability: subtract max value along dim before exponentiating
+        x_max, _ = torch.max(x, dim=self.dim, keepdim=True)
+        x_exp = torch.exp(x - x_max)
+        out = x_exp / torch.sum(x_exp, dim=self.dim, keepdim=True)
+        return out
+
 class TanH(nn.Module):
     def __init__(self):
         super().__init__()
@@ -53,6 +65,48 @@ class TanH(nn.Module):
         out[positive]=1-(2/(torch.exp(2*x[positive])+1))
         out[negative]=(2/(torch.exp(-2*x[negative])+1))-1
         return out
+
+class Dropout(nn.Module):
+    def __init__(self, p=0.5, inplace=False):
+        super().__init__()
+        if p < 0 or p > 1:
+            raise ValueError("Dropout probability must be between 0 and 1.")
+        self.p = p  # probability of dropping a unit
+        self.inplace = inplace
+
+    def forward(self, x):
+        if not self.training or self.p == 0.0:
+            return x
+
+        # Create a mask: 1 for keep, 0 for drop
+        mask = (torch.rand_like(x) > self.p).float()
+
+        if self.inplace:
+            return x.mul_(mask).div_(1 - self.p)  # scale to keep expected value
+        else:
+            return (x * mask) / (1 - self.p)
+
+class Flatten(nn.Module):
+    def __init__(self, start_dim=1, end_dim=-1):
+        super().__init__()
+        self.start_dim = start_dim
+        self.end_dim = end_dim
+
+    def forward(self, x):
+        nd = x.dim()  # number of dimensions
+
+        # Normalize possibly-negative dims
+        start = self.start_dim if self.start_dim >= 0 else nd + self.start_dim
+        end   = self.end_dim   if self.end_dim   >= 0 else nd + self.end_dim
+
+        if not (0 <= start < nd) or not (0 <= end < nd):
+            raise ValueError(f"start_dim/end_dim out of range for input with dim {nd}")
+        if start > end:
+            raise ValueError("start_dim must be <= end_dim")
+
+        new_shape = x.shape[:start] + (-1,) + (() if end == nd - 1 else x.shape[end+1:])
+
+        return x.reshape(new_shape)
 
 class RNN(nn.Module):
     def __init__(self,input_size,hidden_size,bias=True,batch_first=False):
@@ -153,6 +207,35 @@ class GRU(nn.Module):
 
         return outputs, h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
+class Head(nn.Module):
+    '''a single self attention head'''
+
+    def __init__(self, n_embd, head_size,bias=False):
+        super().__init__()
+        self.key=Linear(n_embd,head_size,bias)
+        self.query=Linear(n_embd,head_size,bias)
+        self.value=Linear(n_embd,head_size,bias)
+        self.register_buffer('tril',torch.tril(torch.ones(block_size,block_size)))
+        self.dropout=Dropout().to(device=device)
+        self.softmax=Softmax(dim=-1)
+
+    def forward(self,x):
+
+        B,T,C=x.shape
+        k=self.key(x)       # (B,T,hs)
+        q=self.query(x)     # (B,T,hs)
+
+        # compute attention scores ("affinities")
+        wei= q @ k.transpose(-2,-1)*C**(-0.5)                               #(B,T,C) @ (B,C,T) --------> (B,T,T)
+        wei = wei.masked_fill(self.tril[:T,:T] == 0, float('-inf'))         #(B,T,T)
+        wei=self.softmax(wei)                                        #(B,T,T)
+        wei=self.dropout(wei)
+
+        # perform the weighted aggregation of the values
+        v=self.value(x)
+        out=wei @ v
+        return out,wei
+
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, bias=True, batch_first=False):
         super().__init__()
@@ -222,6 +305,7 @@ class LSTM(nn.Module):
         return outputs, (h_t.unsqueeze(0), c_t.unsqueeze(0))
 
 if __name__ == "__main__":
+    # ==== Test Linear ====
     print("Linear Test:")
     q=Linear(3,4)
     m=q.to(device)
@@ -229,22 +313,26 @@ if __name__ == "__main__":
     print(x.shape)
     print(m(x))
 
+    # ==== Test ReLU ====
     print("ReLU Test:")
     a=torch.randn((1,4)).to(device)
     print(a,torch.relu(a))
     k=ReLu().to(device)
     print(k(a),a)
 
+    # ==== Test Sigmoid ====
     print("Sigmoid Test:")
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=Sigmoid().to(device=device)
     print("Stable Sigmoid:", k(x))
 
+    # ==== Test TanH ====
     print("TanH Test:")
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=TanH().to(device=device)
     print("Stable TanH:", k(x))
 
+    # ==== Test RNN ====
     print("RNN Test:")
     seq_len, batch_size, input_size, hidden_size = 5, 3, 10, 8
     x = torch.randn(seq_len, batch_size, input_size).to(device=device)
@@ -255,6 +343,7 @@ if __name__ == "__main__":
     print(out.shape)  # torch.Size([5, 3, 8])
     print(hn.shape)   # torch.Size([1, 3, 8])
 
+    # ==== Test GRU ====
     print("GRU Test:")
     seq_len = 5
     batch_size = 2
@@ -276,7 +365,60 @@ if __name__ == "__main__":
     print("\nSample output at t=0:\n", output[0])
     print("\nFinal hidden state:\n", final_hidden[0])
 
-    # Test LSTM
+    # ==== Test Softmax ====
+    print("Softmax Test:")
+    softmax = Softmax(dim=1)
+    x = torch.tensor([[1.0, 2.0, 3.0],
+                      [0.5, 0.2, 0.3]])
+    print("Input to Softmax:\n", x)
+    print("Softmax output:\n", softmax(x))
+    print("Sum along dim=1 (should be 1):\n", softmax(x).sum(dim=1))
+
+    # ==== Test Dropout ====
+    dropout = Dropout(p=0.3)
+    dropout.train()  # enable dropout mode
+
+    y = torch.ones((5, 5))
+    print("\nInput to Dropout:\n", y)
+    print("Dropout output (train mode):\n", dropout(y))
+
+    dropout.eval()  # disable dropout
+    print("\nDropout output (eval mode - should be unchanged):\n", dropout(y))
+
+    # ==== Test Flatten ====
+    flatten = Flatten()
+    z = torch.randn(2, 3, 4, 5)  # shape: (2, 3, 4, 5)
+    print("\nFlatten test:")
+    print("Before flatten:", z.shape)
+    z_flat = flatten(z)
+    print("After flatten:", z_flat.shape)
+
+    # Custom flatten range
+    flatten_partial = Flatten(start_dim=2, end_dim=3)
+    z_partial = flatten_partial(z)
+    print("Partial flatten (dims 2-3):", z_partial.shape)
+
+    # ==== Test Attention Head ====
+    # Define the hyperparameters for the self-attention head
+    n_embd = 64        # Embedding dimension (input size for the linear layers)
+    head_size = 16     # Head size (output size for the linear layers)
+    block_size = 8     # Sequence length
+    batch_size = 4     # Number of sequences in the batch
+    print("\nAttention Head test:")
+    head = Head(n_embd, head_size).to(device=device)
+
+    # Create a random input tensor
+    x = torch.randn(batch_size, block_size, n_embd).to(device=device)
+
+    # Forward pass
+    out, wei = head(x)
+
+    # Print the shapes
+    print(f"Input shape (x): {x.shape}")
+    print(f"Output shape (out): {out.shape}")
+    print(f"Attention weights shape (wei): {wei.shape}")
+
+    # ==== Test LSTM ====
     print("LSTM Test:")
     input_size = 5
     hidden_size = 3
