@@ -20,10 +20,7 @@ class ReLu(nn.Module):
         self.inplace=inplace
 
     def forward(self,x):
-        if(self.inplace):
-            return torch.clamp_(x,min=0.0)      # modifies x
-        else:
-            return torch.clamp(x,min=0.0)       # x remains unchanged
+        return torch.maximum(x, torch.tensor(0.0, device=x.device))
 
 class Sigmoid(nn.Module):
     def __init__(self):
@@ -460,26 +457,26 @@ if __name__ == "__main__":
     print(m(x))
 
     # ==== Test ReLU ====
-    print("ReLU Test:")
+    print("\nReLU Test:")
     a=torch.randn((1,4)).to(device)
     print(a,torch.relu(a))
     k=ReLu().to(device)
     print(k(a),a)
 
     # ==== Test Sigmoid ====
-    print("Sigmoid Test:")
+    print("\nSigmoid Test:")
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=Sigmoid().to(device=device)
     print("Stable Sigmoid:", k(x))
 
     # ==== Test TanH ====
-    print("TanH Test:")
+    print("\nTanH Test:")
     x = torch.tensor([-1000.0, 0.0, 1000.0]).to(device=device)
     k=TanH().to(device=device)
     print("Stable TanH:", k(x))
 
     # ==== Test RNN ====
-    print("RNN Test:")
+    print("\nRNN Test:")
     seq_len, batch_size, input_size, hidden_size = 5, 3, 10, 8
     x = torch.randn(seq_len, batch_size, input_size).to(device=device)
     rnn = RNN(input_size, hidden_size).to(device=device)
@@ -490,7 +487,7 @@ if __name__ == "__main__":
     print(hn.shape)   # torch.Size([1, 3, 8])
 
     # ==== Test GRU ====
-    print("GRU Test:")
+    print("\nGRU Test:")
     seq_len = 5
     batch_size = 2
     input_size = 3
@@ -512,7 +509,7 @@ if __name__ == "__main__":
     print("\nFinal hidden state:\n", final_hidden[0])
 
     # ==== Test Softmax ====
-    print("Softmax Test:")
+    print("\nSoftmax Test:")
     softmax = Softmax(dim=1)
     x = torch.tensor([[1.0, 2.0, 3.0],
                       [0.5, 0.2, 0.3]])
@@ -521,22 +518,21 @@ if __name__ == "__main__":
     print("Sum along dim=1 (should be 1):\n", softmax(x).sum(dim=1))
 
     # ==== Test Dropout ====
-    print("Dropout Test:")
+    print("\nDropout Test:")
     dropout = Dropout(p=0.3)
     dropout.train()  # enable dropout mode
 
     y = torch.ones((5, 5))
-    print("\nInput to Dropout:\n", y)
+    print("Input to Dropout:\n", y)
     print("Dropout output (train mode):\n", dropout(y))
 
     dropout.eval()  # disable dropout
     print("\nDropout output (eval mode - should be unchanged):\n", dropout(y))
 
     # ==== Test Flatten ====
-    print("Flatten Test:")
+    print("\nFlatten Test:")
     flatten = Flatten()
     z = torch.randn(2, 3, 4, 5)  # shape: (2, 3, 4, 5)
-    print("\nFlatten test:")
     print("Before flatten:", z.shape)
     z_flat = flatten(z)
     print("After flatten:", z_flat.shape)
@@ -567,7 +563,7 @@ if __name__ == "__main__":
     print(f"Attention weights shape (wei): {wei.shape}")
 
     # ==== Test LSTM ====
-    print("LSTM Test:")
+    print("\nLSTM Test:")
     input_size = 5
     hidden_size = 3
     seq_len = 4
@@ -582,7 +578,7 @@ if __name__ == "__main__":
     print("c_n:", c_n.shape)  # (1, batch, hidden_size)
 
     # ==== Test CNN ====
-    print("CNN Test:")
+    print("\nCNN Test:")
 
     B, C_in, H, W = 2, 3, 5, 5  # batch=2, channels=3, height=5, width=5
     x = torch.randn(B, C_in, H, W).to(device)
