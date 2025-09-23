@@ -208,9 +208,9 @@ class GRU(nn.Module):
         return outputs, h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
 class Head(nn.Module):
-    '''a single self attention head'''
+    """ a single self attention head """
 
-    def __init__(self, n_embd, head_size,bias=False):
+    def __init__(self, n_embd, head_size, block_size,bias=False):
         super().__init__()
         self.key=Linear(n_embd,head_size,bias)
         self.query=Linear(n_embd,head_size,bias)
@@ -221,19 +221,19 @@ class Head(nn.Module):
 
     def forward(self,x):
 
-        B,T,C=x.shape
-        k=self.key(x)       # (B,T,hs)
-        q=self.query(x)     # (B,T,hs)
+        B,T,C = x.shape
+        k = self.key(x)       # (B,T,hs)
+        q = self.query(x)     # (B,T,hs)
 
         # compute attention scores ("affinities")
-        wei= q @ k.transpose(-2,-1)*C**(-0.5)                               #(B,T,C) @ (B,C,T) --------> (B,T,T)
+        wei = q @ k.transpose(-2,-1)*C**(-0.5)                               #(B,T,C) @ (B,C,T) --------> (B,T,T)
         wei = wei.masked_fill(self.tril[:T,:T] == 0, float('-inf'))         #(B,T,T)
-        wei=self.softmax(wei)                                        #(B,T,T)
-        wei=self.dropout(wei)
+        wei = self.softmax(wei)                                        #(B,T,T)
+        wei = self.dropout(wei)
 
         # perform the weighted aggregation of the values
-        v=self.value(x)
-        out=wei @ v
+        v = self.value(x)
+        out = wei @ v
         return out,wei
 
 class LSTM(nn.Module):
@@ -384,6 +384,62 @@ class MaxPool2D(nn.Module):
                         out[b, c, i, j] = torch.max(region)
         return out
 
+class BatchNorm2D(nn.Module):
+    def __init__(self, num_features, eps=1e-5, momentum=0.1):
+        super().__init__()
+        self.num_features = num_features
+        self.eps = eps
+        self.momentum = momentum
+
+        # Learnable parameters (scale & shift)
+        self.gamma = nn.Parameter(torch.ones(num_features))
+        self.beta = nn.Parameter(torch.zeros(num_features))
+
+        # Running statistics (for eval mode)
+        self.register_buffer("running_mean", torch.zeros(num_features))
+        self.register_buffer("running_var", torch.ones(num_features))
+
+    def forward(self, x):
+        if self.training:
+            # mean & var across batch + H + W
+            mean = x.mean(dim=(0, 2, 3), keepdim=True)
+            var = x.var(dim=(0, 2, 3), unbiased=False, keepdim=True)
+
+            # update running stats
+            self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean.squeeze()
+            self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var.squeeze()
+        else:
+            # use running stats during eval
+            mean = self.running_mean.view(1, -1, 1, 1)
+            var = self.running_var.view(1, -1, 1, 1)
+
+        # normalize
+        x_hat = (x - mean) / torch.sqrt(var + self.eps)
+        out = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
+        return out
+
+class LayerNorm(nn.Module):
+    def __init__(self, normalized_shape, eps=1e-5):
+        super().__init__()
+        if isinstance(normalized_shape, int):
+            normalized_shape = (normalized_shape,)
+        self.normalized_shape = tuple(normalized_shape)
+        self.eps = eps
+
+        # Learnable params
+        self.gamma = nn.Parameter(torch.ones(self.normalized_shape))
+        self.beta = nn.Parameter(torch.zeros(self.normalized_shape))
+
+    def forward(self, x):
+        # Normalize across last len(normalized_shape) dims
+        dims = tuple(range(-len(self.normalized_shape), 0))
+        mean = x.mean(dim=dims, keepdim=True)
+        var = x.var(dim=dims, unbiased=False, keepdim=True)
+
+        x_hat = (x - mean) / torch.sqrt(var + self.eps)
+        out = self.gamma * x_hat + self.beta
+        return out
+
 if __name__ == "__main__":
     # ==== Test Linear ====
     print("Linear Test:")
@@ -487,7 +543,7 @@ if __name__ == "__main__":
     block_size = 8     # Sequence length
     batch_size = 4     # Number of sequences in the batch
     print("\nAttention Head test:")
-    head = Head(n_embd, head_size).to(device=device)
+    head = Head(n_embd, head_size,block_size,False).to(device=device)
 
     # Create a random input tensor
     x = torch.randn(batch_size, block_size, n_embd).to(device=device)
@@ -529,3 +585,15 @@ if __name__ == "__main__":
 
     z = pool(y)
     print("MaxPool2D output shape:", z.shape)  # Expect: (B, out_channels, H/2, W/2)
+
+    # ==== Test BatchNorm ====
+    bn = BatchNorm2D(3)
+    x = torch.randn(8, 3, 32, 32)  # B, C, H, W
+    y = bn(x)
+    print("BatchNorm2D out:", y.shape)
+
+    # ==== Test LayerNorm ====
+    ln = LayerNorm(10)  # normalize last dim
+    x = torch.randn(4, 5, 10)
+    y = ln(x)
+    print("LayerNorm out:", y.shape)
