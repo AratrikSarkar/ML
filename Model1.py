@@ -382,6 +382,8 @@ class MaxPool2D(nn.Module):
         # reshape to (B, C, H_out, W_out)
         H_out = (H - kH) // sH + 1
         W_out = (W - kW) // sW + 1
+
+        # reshape output tensor into final shape as feature map
         return out.view(B, C, H_out, W_out)
 
 class BatchNorm2D(nn.Module):
