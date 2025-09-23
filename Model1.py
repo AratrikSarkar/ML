@@ -369,20 +369,20 @@ class MaxPool2D(nn.Module):
         kH, kW = self.kernel_size
         sH, sW = self.stride
 
+        # unfold input into patches
+        patches = torch.nn.functional.unfold(x, kernel_size=(kH, kW), stride=(sH, sW))
+        # patches: (B, C*kH*kW, L) where L = H_out*W_out
+
+        # reshape to group (C, kH*kW)
+        patches = patches.view(B, C, kH * kW, -1)
+
+        # take max over spatial kernel
+        out, _ = patches.max(dim=2)
+
+        # reshape to (B, C, H_out, W_out)
         H_out = (H - kH) // sH + 1
         W_out = (W - kW) // sW + 1
-
-        out = torch.zeros((B, C, H_out, W_out), device=x.device)
-
-        for b in range(B):
-            for c in range(C):
-                for i in range(0, H_out):
-                    for j in range(0, W_out):
-                        h_start, h_end = i * sH, i * sH + kH
-                        w_start, w_end = j * sW, j * sW + kW
-                        region = x[b, c, h_start:h_end, w_start:w_end]
-                        out[b, c, i, j] = torch.max(region)
-        return out
+        return out.view(B, C, H_out, W_out)
 
 class BatchNorm2D(nn.Module):
     def __init__(self, num_features, eps=1e-5, momentum=0.1):
