@@ -332,24 +332,32 @@ class Conv2D(nn.Module):
         sH, sW = self.stride
         pH, pW = self.padding
 
-        # Apply padding
-        if pH > 0 or pW > 0:
-            x = torch.nn.functional.pad(x, (pW, pW, pH, pH))
+        # Unfold the input into patches
+        x_unfolded = torch.nn.functional.unfold(x,
+                              kernel_size=self.kernel_size,
+                              stride=self.stride,
+                              padding=self.padding)
+        # (B, C_in * kH * kW, L) where L = H_out * W_out
 
-        H_out = (x.shape[2] - kH) // sH + 1
-        W_out = (x.shape[3] - kW) // sW + 1
+        # Reshape the kernel
+        W_reshaped = self.W.view(self.out_channels, -1)
+        # W_reshaped shape: (C_out, C_in * kH * kW)
 
-        out = torch.zeros((B, self.out_channels, H_out, W_out), device=x.device)
+        # Perform matrix multiplication
+        out_unfolded = W_reshaped @ x_unfolded
+        # out_unfolded shape: (B, C_out, L)
 
-        # Perform convolution
-        for b in range(B):
-            for oc in range(self.out_channels):
-                for i in range(0, H_out):
-                    for j in range(0, W_out):
-                        h_start, h_end = i * sH, i * sH + kH
-                        w_start, w_end = j * sW, j * sW + kW
-                        region = x[b, :, h_start:h_end, w_start:w_end]  # (C_in, kH, kW)
-                        out[b, oc, i, j] = torch.sum(region * self.W[oc]) + (self.b[oc] if self.b is not None else 0)
+        # Add bias if it exists
+        if self.b is not None:
+            # Reshape bias to (1, C_out, 1) to broadcast correctly
+            out_unfolded = out_unfolded + self.b.view(1, -1, 1)
+
+        # Reshape the output tensor into the final shape
+        H_out = (H_in + 2 * pH - kH) // sH + 1
+        W_out = (W_in + 2 * pW - kW) // sW + 1
+
+        out = out_unfolded.view(B, self.out_channels, H_out, W_out)
+
         return out
 
 class MaxPool2D(nn.Module):
