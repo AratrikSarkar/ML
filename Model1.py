@@ -2,6 +2,26 @@ import torch
 import torch.nn as nn
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+class Dropout(nn.Module):
+    def __init__(self, p=0.5, inplace=False):
+        super().__init__()
+        if p < 0 or p > 1:
+            raise ValueError("Dropout probability must be between 0 and 1.")
+        self.p = p  # probability of dropping a unit
+        self.inplace = inplace
+
+    def forward(self, x):
+        if not self.training or self.p == 0.0:
+            return x
+
+        # Create a mask: 1 for keep, 0 for drop
+        mask = (torch.rand_like(x) > self.p).float()
+
+        if self.inplace:
+            return x.mul_(mask).div_(1 - self.p)  # scale to keep expected value
+        else:
+            return (x * mask) / (1 - self.p)
+
 class Linear(nn.Module):
     def __init__(self,fan_in,fan_out,bias=False):
         super().__init__()
@@ -20,7 +40,10 @@ class ReLu(nn.Module):
         self.inplace=inplace
 
     def forward(self,x):
-        return torch.maximum(x, torch.tensor(0.0, device=x.device))
+        if(self.inplace):
+            return torch.clamp_(x,min=0.0)      # modifies x
+        else:
+            return torch.clamp(x,min=0.0)       # x remains unchanged
 
 class Sigmoid(nn.Module):
     def __init__(self):
@@ -63,25 +86,6 @@ class TanH(nn.Module):
         out[negative]=(2/(torch.exp(-2*x[negative])+1))-1
         return out
 
-class Dropout(nn.Module):
-    def __init__(self, p=0.5, inplace=False):
-        super().__init__()
-        if p < 0 or p > 1:
-            raise ValueError("Dropout probability must be between 0 and 1.")
-        self.p = p  # probability of dropping a unit
-        self.inplace = inplace
-
-    def forward(self, x):
-        if not self.training or self.p == 0.0:
-            return x
-
-        # Create a mask: 1 for keep, 0 for drop
-        mask = (torch.rand_like(x) > self.p).float()
-
-        if self.inplace:
-            return x.mul_(mask).div_(1 - self.p)  # scale to keep expected value
-        else:
-            return (x * mask) / (1 - self.p)
 
 class Flatten(nn.Module):
     def __init__(self, start_dim=1, end_dim=-1):
@@ -232,6 +236,23 @@ class Head(nn.Module):
         v = self.value(x)
         out = wei @ v
         return out,wei
+    
+class MultiHeadAttention(nn.Module):
+    """ multiple heads of self-attention in parallel """
+
+    def __init__(self,num_head,n_embd, head_size, block_size,bias=False):
+        super().__init__()
+        self.heads=nn.ModuleList([Head(n_embd, head_size, block_size,bias=False) for _ in range(num_head)])
+        self.proj=Linear(n_embd,n_embd)
+        self.dropout = Dropout()
+        
+    def forward(self,x):
+        j=[h(x) for h in self.heads]
+        # print(len(j),len(j[0]))
+        out=torch.cat([h(x)[0] for h in self.heads],dim=-1)
+        out=self.dropout(self.proj(out))
+        print(out.shape)
+        return out
 
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, bias=True, batch_first=False):
@@ -561,6 +582,26 @@ if __name__ == "__main__":
     print(f"Input shape (x): {x.shape}")
     print(f"Output shape (out): {out.shape}")
     print(f"Attention weights shape (wei): {wei.shape}")
+
+    # ==== Test Multi-Headed Attention Head ====
+    # Define the hyperparameters for the self-attention head
+    n_embd = 64        # Embedding dimension (input size for the linear layers)  
+    block_size = 8     # Sequence length
+    batch_size = 4     # Number of sequences in the batch
+    print("\nMultiHeadAttention Head test:")
+    n_head = 8          ## nhead should divide n_embd
+    head_size=n_embd//n_head            # Head size (output size for the linear layers)
+    mhead = MultiHeadAttention(n_head,n_embd, head_size,block_size,False).to(device=device)
+
+    # Create a random input tensor
+    x = torch.randn(batch_size, block_size, n_embd).to(device=device)
+
+    # Forward pass
+    out = mhead(x)
+
+    # Print the shapes
+    print(f"Input shape (x): {x.shape}")
+    print(f"Output shape (out): {out.shape}")
 
     # ==== Test LSTM ====
     print("\nLSTM Test:")
