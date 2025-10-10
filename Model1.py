@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
+from torch.nn import init
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Dropout(nn.Module):
@@ -27,6 +29,11 @@ class Linear(nn.Module):
         super().__init__()
         self.W=nn.Parameter(torch.randn((fan_out,fan_in)))
         self.b=nn.Parameter(torch.randn(fan_out)) if bias==True else None
+        init.kaiming_uniform_(self.W, nonlinearity='relu') 
+        
+        # 3. Initialize Bias (if used) to zero, as is standard practice
+        if self.b is not None:
+            init.zeros_(self.b)
 
     def forward(self, x):
         out= x @ self.W.T
@@ -150,11 +157,12 @@ class RNN(nn.Module):
         return  outputs,h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
 class GRU(nn.Module):
-    def __init__(self, input_size, hidden_size, bias=True,batch_first=False):
+    def __init__(self, input_size, hidden_size, bias=True,batch_first=False,only_output=False):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.batch_first=batch_first
+        self.only_output=only_output
 
         # Gates: z, r, h̃
         # Update Gate Layers
@@ -206,12 +214,15 @@ class GRU(nn.Module):
         if self.batch_first:
             outputs=outputs.permute(1,0,2) # (seq_len, batch_size, input_size) ----> (batch_size, seq_len, input_size)
 
+        if self.only_output:
+            return outputs
+
         return outputs, h_t.unsqueeze(0)    #for h_t: (batch_size,hidden_size) ----> (1,batch_size,hidden_size)
 
 class Head(nn.Module):
     """ a single self attention head """
 
-    def __init__(self, n_embd, head_size, block_size,bias=False):
+    def __init__(self, n_embd, head_size, block_size,bias=False,onlyOutput=False):
         super().__init__()
         self.key=Linear(n_embd,head_size,bias)
         self.query=Linear(n_embd,head_size,bias)
@@ -219,6 +230,7 @@ class Head(nn.Module):
         self.register_buffer('tril',torch.tril(torch.ones(block_size,block_size)))
         self.dropout=Dropout().to(device=device)
         self.softmax=Softmax(dim=-1)
+        self.onlyOutput=onlyOutput
 
     def forward(self,x):
 
@@ -235,6 +247,10 @@ class Head(nn.Module):
         # perform the weighted aggregation of the values
         v = self.value(x)
         out = wei @ v
+
+        if self.onlyOutput:
+            return out
+
         return out,wei
     
 class MultiHeadAttention(nn.Module):
@@ -251,7 +267,7 @@ class MultiHeadAttention(nn.Module):
         # print(len(j),len(j[0]))
         out=torch.cat([h(x)[0] for h in self.heads],dim=-1)
         out=self.dropout(self.proj(out))
-        print(out.shape)
+        #print(out.shape)
         return out
 
 class LSTM(nn.Module):
@@ -467,6 +483,40 @@ class LayerNorm(nn.Module):
         x_hat = (x - mean) / torch.sqrt(var + self.eps)
         out = self.gamma * x_hat + self.beta
         return out
+    
+class M1(nn.Module):
+    def __init__(self,block_size,vocab_size,n_embd,hidden_size,n_head):
+        super().__init__()
+        self.token_embedding_table=nn.Embedding(vocab_size,n_embd)
+        head_size=n_embd//2
+        self.net=nn.Sequential(
+            Linear(n_embd,4*n_embd),    #per token level,all tokens do this independently
+            ReLu(),
+            Dropout(0.3),
+            GRU(4*n_embd,n_embd,batch_first=True,only_output=True),
+            LayerNorm(n_embd),
+            Head( n_embd, head_size, block_size,onlyOutput=True),
+            LayerNorm(block_size),
+            Linear(block_size,vocab_size)
+
+        )
+    
+    def forward(self,x,targets=None):
+        p=self.token_embedding_table(x)
+        logits= self.net(p)
+
+        #print(logits.shape)
+        
+         
+        if targets is None:
+            loss = None
+        else:
+            B,T,C=logits.shape
+            logits=logits.view(B*T,C)
+            targets=targets.view(B*T)
+            loss=F.cross_entropy(logits,targets)#as it takes input as (B,C,T)
+
+        return logits,loss
 
 if __name__ == "__main__":
     # ==== Test Linear ====
