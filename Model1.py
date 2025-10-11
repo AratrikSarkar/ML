@@ -222,7 +222,7 @@ class GRU(nn.Module):
 class Head(nn.Module):
     """ a single self attention head """
 
-    def __init__(self, n_embd, head_size, block_size,bias=False,onlyOutput=False):
+    def __init__(self, n_embd, head_size, block_size,bias=False,only_output=False):
         super().__init__()
         self.key=Linear(n_embd,head_size,bias)
         self.query=Linear(n_embd,head_size,bias)
@@ -230,7 +230,7 @@ class Head(nn.Module):
         self.register_buffer('tril',torch.tril(torch.ones(block_size,block_size)))
         self.dropout=Dropout().to(device=device)
         self.softmax=Softmax(dim=-1)
-        self.onlyOutput=onlyOutput
+        self.only_output=only_output
 
     def forward(self,x):
 
@@ -271,11 +271,12 @@ class MultiHeadAttention(nn.Module):
         return out
 
 class LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, bias=True, batch_first=False):
+    def __init__(self, input_size, hidden_size, bias=True, batch_first=False, only_output=False):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.batch_first = batch_first
+        self.only_output = only_output
 
         # Input → Gates
         self.x2i = Linear(input_size, hidden_size, bias)  # input gate
@@ -508,6 +509,40 @@ class M1(nn.Module):
         #print(logits.shape)
         
          
+        if targets is None:
+            loss = None
+        else:
+            B,T,C=logits.shape
+            logits=logits.view(B*T,C)
+            targets=targets.view(B*T)
+            loss=F.cross_entropy(logits,targets)#as it takes input as (B,C,T)
+
+        return logits,loss
+
+class M2(nn.Module):
+    def __init__(self,block_size,vocab_size,n_embd,hidden_size,n_head):
+        super().__init__()
+        self.token_embedding_table=nn.Embedding(vocab_size,n_embd)
+        head_size=n_embd//2
+        self.net=nn.Sequential(
+            Linear(n_embd,4*n_embd),    #per token level,all tokens do this independently
+            ReLu(),
+            Dropout(0.3),
+            LSTM(4*n_embd,n_embd,batch_first=True,only_output=True), #only_output=True
+            LayerNorm(n_embd),
+            Head( n_embd, head_size, block_size,onlyOutput=True),
+            LayerNorm(block_size),
+            Linear(block_size,vocab_size)
+
+        )
+
+    def forward(self,x,targets=None):
+        p=self.token_embedding_table(x)
+        logits= self.net(p)
+
+        #print(logits.shape)
+
+
         if targets is None:
             loss = None
         else:
