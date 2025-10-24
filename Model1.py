@@ -248,7 +248,7 @@ class Head(nn.Module):
         v = self.value(x)
         out = wei @ v
 
-        if self.onlyOutput:
+        if self.only_output:
             return out
 
         return out,wei
@@ -336,6 +336,9 @@ class LSTM(nn.Module):
 
         if self.batch_first:
             outputs = outputs.permute(1, 0, 2)
+        
+        if self.only_output:
+            return outputs
 
         return outputs, (h_t.unsqueeze(0), c_t.unsqueeze(0))
 
@@ -496,7 +499,7 @@ class M1(nn.Module):
             Dropout(0.3),
             GRU(4*n_embd,n_embd,batch_first=True,only_output=True),
             LayerNorm(n_embd),
-            Head( n_embd, head_size, block_size,onlyOutput=True),
+            Head( n_embd, head_size, block_size,only_output=True),
             LayerNorm(block_size),
             Linear(block_size,vocab_size)
 
@@ -530,7 +533,7 @@ class M2(nn.Module):
             Dropout(0.3),
             LSTM(4*n_embd,n_embd,batch_first=True,only_output=True), #only_output=True
             LayerNorm(n_embd),
-            Head( n_embd, head_size, block_size,onlyOutput=True),
+            Head( n_embd, head_size, block_size,only_output=True),
             LayerNorm(block_size),
             Linear(block_size,vocab_size)
 

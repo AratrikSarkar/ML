@@ -34,11 +34,12 @@ class TanH(nn.Module):
         return out
 
 class LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, bias=True, batch_first=False):
+    def __init__(self, input_size, hidden_size, bias=True, batch_first=False, only_output=False):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.batch_first = batch_first
+        self.only_output = only_output
 
         # Input → Gates
         self.x2i = Linear(input_size, hidden_size, bias)  # input gate
@@ -98,6 +99,9 @@ class LSTM(nn.Module):
 
         if self.batch_first:
             outputs = outputs.permute(1, 0, 2)
+        
+        if self.only_output:
+            return outputs
 
         return outputs, (h_t.unsqueeze(0), c_t.unsqueeze(0))
 
