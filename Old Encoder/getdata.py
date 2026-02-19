@@ -15,7 +15,7 @@ learning_rate = 3e-4
 eval_iters = 50
 #------------------------------------------------------------
 
-with open("AeCa.txt",'r',encoding='UTF-8') as f:
+with open("AeCa.txt", 'r', encoding='UTF-8') as f:
     text=f.read()
 f.close()
 chars=sorted(list(set(text)))                                #Total number of different characters in the DNA sequence
